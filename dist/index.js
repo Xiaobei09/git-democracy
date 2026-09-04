@@ -77852,7 +77852,7 @@ function readReactionsCounts(octokit, owner, repo, issueNumber) {
                 const response = _c;
                 for (const review of response.data) {
                     const login = (_d = review.user) === null || _d === void 0 ? void 0 : _d.login;
-                    if (login !== null) {
+                    if (login == null) {
                         core.info('not counting vote of null user');
                     }
                     else {
