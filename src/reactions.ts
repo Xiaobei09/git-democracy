@@ -43,7 +43,7 @@ export async function readReactionsCounts(
   )) {
     for (const review of response.data) {
       const login = review.user?.login
-      if (login !== null) {
+      if (login == null) {
         core.info('not counting vote of null user')
       } else {
         const vote = pullRequestReviewStateToNumber(review.state)
