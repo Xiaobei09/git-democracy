@@ -61,6 +61,16 @@ async function startOrUpdateHelper(
   const commentID = commentToId(comment)
   core.info(`commentId: ${await commentID}`)
 
+  if ((await commentID) === null) {
+    // 计票只需要读权限，所以这一步失败不影响本次评估的结论，只是评论发不出去。
+    // 显式记一条，免得运行者看到「没有评论」却不知道为什么。
+    core.warning(
+      'the voting comment is absent (the token in this run cannot write comments, ' +
+        'which is what GitHub does for pull_request / pull_request_review events on ' +
+        'fork PRs). The vote below is evaluated from read-only API calls and is authoritative.'
+    )
+  }
+
   const voters = await votersPromise
   core.info(`voters: ${inspect(voters)}`)
 
