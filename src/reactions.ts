@@ -18,6 +18,7 @@ export interface Reactions {
 
 const approved = 'APPROVED'
 const changesRequested = 'CHANGES_REQUESTED'
+const pendingReview = 'PENDING'
 
 type UserReactions = Map<string, number>
 
@@ -46,24 +47,37 @@ export async function readReactionsCounts(
       if (login == null) {
         core.info('not counting vote of null user')
       } else {
-        const vote = pullRequestReviewStateToNumber(review.state)
-        result.set(login, vote)
+        // A PENDING review is a draft somebody opened and never submitted
+        // (GitHub reports submitted_at === null for it). Counting it as a vote
+        // would overwrite that person's last real vote with a 0, silently
+        // dropping a voter and making the vote fail for a reason that has
+        // nothing to do with the vote itself.
+        if (review.state === pendingReview && review.submitted_at == null) {
+          core.info(
+            `not counting unsubmitted ${pendingReview} review draft of ${login} as a vote`
+          )
+        } else {
+          const vote = pullRequestReviewStateToNumber(review.state)
+          result.set(login, vote)
+        }
       }
     }
+  }
 
-    // add the author since they cannot review their own PR in Github
-    // TODO: could consolidate this call as it's used elsewhere
-    const pullRequest = await octokit.rest.pulls.get({
-      owner,
-      repo,
-      pull_number: issueNumber
-    })
+  // add the author since they cannot review their own PR in Github
+  // This has to run after every review has been read, otherwise a review of
+  // the author would win over the +1 below.
+  // TODO: could consolidate this call as it's used elsewhere
+  const pullRequest = await octokit.rest.pulls.get({
+    owner,
+    repo,
+    pull_number: issueNumber
+  })
 
-    const pullRequestAuthor = pullRequest.data.user?.login
-    if (pullRequestAuthor) {
-      core.info(`Counting PR author as a +1 vote: ${pullRequestAuthor}`)
-      result.set(pullRequestAuthor, pullRequestReviewStateToNumber(approved))
-    }
+  const pullRequestAuthor = pullRequest.data.user?.login
+  if (pullRequestAuthor) {
+    core.info(`Counting PR author as a +1 vote: ${pullRequestAuthor}`)
+    result.set(pullRequestAuthor, pullRequestReviewStateToNumber(approved))
   }
 
   core.info(`readReactionsCounts: ${inspect(result)}`)

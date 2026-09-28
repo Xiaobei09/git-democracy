@@ -559,6 +559,7 @@ exports.forIt = '+1';
 exports.againstIt = '-1';
 const approved = 'APPROVED';
 const changesRequested = 'CHANGES_REQUESTED';
+const pendingReview = 'PENDING';
 // These are summarized reactions which is nice and simple but not useful if we
 // need to limit voters in some way to only registered voters.
 function readReactionsCounts(octokit, owner, repo, issueNumber) {
@@ -583,21 +584,19 @@ function readReactionsCounts(octokit, owner, repo, issueNumber) {
                         core.info('not counting vote of null user');
                     }
                     else {
-                        const vote = pullRequestReviewStateToNumber(review.state);
-                        result.set(login, vote);
+                        // A PENDING review is a draft somebody opened and never submitted
+                        // (GitHub reports submitted_at === null for it). Counting it as a vote
+                        // would overwrite that person's last real vote with a 0, silently
+                        // dropping a voter and making the vote fail for a reason that has
+                        // nothing to do with the vote itself.
+                        if (review.state === pendingReview && review.submitted_at == null) {
+                            core.info(`not counting unsubmitted ${pendingReview} review draft of ${login} as a vote`);
+                        }
+                        else {
+                            const vote = pullRequestReviewStateToNumber(review.state);
+                            result.set(login, vote);
+                        }
                     }
-                }
-                // add the author since they cannot review their own PR in Github
-                // TODO: could consolidate this call as it's used elsewhere
-                const pullRequest = yield octokit.rest.pulls.get({
-                    owner,
-                    repo,
-                    pull_number: issueNumber
-                });
-                const pullRequestAuthor = (_e = pullRequest.data.user) === null || _e === void 0 ? void 0 : _e.login;
-                if (pullRequestAuthor) {
-                    core.info(`Counting PR author as a +1 vote: ${pullRequestAuthor}`);
-                    result.set(pullRequestAuthor, pullRequestReviewStateToNumber(approved));
                 }
             }
         }
@@ -607,6 +606,20 @@ function readReactionsCounts(octokit, owner, repo, issueNumber) {
                 if (!_f && !_a && (_b = _g.return)) yield _b.call(_g);
             }
             finally { if (e_1) throw e_1.error; }
+        }
+        // add the author since they cannot review their own PR in Github
+        // This has to run after every review has been read, otherwise a review of
+        // the author would win over the +1 below.
+        // TODO: could consolidate this call as it's used elsewhere
+        const pullRequest = yield octokit.rest.pulls.get({
+            owner,
+            repo,
+            pull_number: issueNumber
+        });
+        const pullRequestAuthor = (_e = pullRequest.data.user) === null || _e === void 0 ? void 0 : _e.login;
+        if (pullRequestAuthor) {
+            core.info(`Counting PR author as a +1 vote: ${pullRequestAuthor}`);
+            result.set(pullRequestAuthor, pullRequestReviewStateToNumber(approved));
         }
         core.info(`readReactionsCounts: ${(0, util_1.inspect)(result)}`);
         return result;
